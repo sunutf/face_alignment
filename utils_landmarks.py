@@ -8,7 +8,7 @@ def get_five_landmarks_from_net(landmarks):
     Return 5 landmarks needed in face alignment
     """
     num_lmks = landmarks.shape[0]
-
+    
     if num_lmks == 5:
         left_eye = landmarks[0]
         right_eye = landmarks[1]
@@ -54,6 +54,46 @@ def get_five_landmarks_from_net(landmarks):
         raise NotImplementedError(f"{num_lmks} not supported !")
     return np.array([left_eye, right_eye, nose, mouse_left, mouse_right])
 
+def get_six_landmarks_from_net(landmarks):
+    """
+    Return 6 landmarks needed in face alignment
+    """
+    num_lmks = landmarks.shape[0]
+    
+    if num_lmks == 19:
+        left_eye = landmarks[7]
+        right_eye = landmarks[10]
+        center_eye = (left_eye + right_eye)/2
+        nose = landmarks[13]
+        mouse_left = landmarks[15]
+        mouse_right = landmarks[17]
+        center_mouse = (mouse_left + mouse_right)/2
+        chin = landmarks[18]
+        
+        diff_eye2nose = center_eye - nose
+        diff_nose2chin = nose - chin
+        
+        diff_eyes = left_eye - right_eye
+        offset = max(abs(diff_eyes))
+        direction = np.argmax(abs(diff_eyes)) #0, 1
+        offset = offset/5
+        
+        
+        if max(abs(diff_eye2nose)) > offset or max(abs(diff_nose2chin)) > offset :
+            diff_radius_mouse = abs(center_mouse[direction] - mouse_left[direction])
+            diff_radius_chin = abs(center_mouse[direction] - chin[direction])
+
+            if diff_radius_chin > diff_radius_mouse:
+                chin = (None, None)
+            elif diff_eye2nose[0] * diff_nose2chin[0] < 0 :
+                chin = (None, None)
+            elif diff_eye2nose[1] * diff_nose2chin[1] < 0 :
+                chin = (None, None)
+
+    else:
+        raise NotImplementedError(f"{num_lmks} not supported !")
+    return np.array([left_eye, right_eye, nose, mouse_left, mouse_right, chin])
+
 
 def set_circles_on_img(image, circles_list, circle_size=5, color=(255, 0, 0), is_copy=False):
     """
@@ -77,6 +117,33 @@ def set_circles_on_img(image, circles_list, circle_size=5, color=(255, 0, 0), is
             cv2.circle(temp_image, (int(np.round(circle[0])), int(np.round(circle[1]))), circle_size, color, -1)
     return temp_image
 
+def set_circles_on_diff_color_img(image, circles_list, circle_size=5, is_copy=False):
+    """
+    Set circles on image
+    Input :
+        - image        : numpy array
+        - circles_list : [circle1, circle2, ...] or [[circle1_1, circle1_2, ...], [circle2_1, circle2_2, ...]]
+        - circle_size  : radius of circle
+        - color   : used color for circles
+        - is_copy : if False then circles are plotted on the same image. Otherwise copy of image used and returned
+    Output :
+        - image or copy of image with drawn circles
+    """
+    color_list = [(255,0,0), (0,255,0), (0,0,255), (255,255,0), (0,255,255)]
+    color_i = 0
+    temp_image = image.copy() if is_copy else image
+    if isinstance(circles_list[0][0], list) or isinstance(circles_list[0][0], np.ndarray):
+        for circle_list in circles_list:
+            for circle in circle_list:
+                cv2.circle(temp_image, (int(np.round(circle[0])), int(np.round(circle[1]))), circle_size, color_list[color_i], -1)
+                color_i += 1
+    else:
+        for circle in circles_list:
+            cv2.circle(temp_image, (int(np.round(circle[0])), int(np.round(circle[1]))), circle_size,  color_list[color_i], -1)
+            color_i += 1
+    return temp_image
+
+
 
 def show_landmarks(img, lmks, circle_size=3, color=(255, 0, 0), figsize=(10,8), is_copy=True):
     """
@@ -88,8 +155,25 @@ def show_landmarks(img, lmks, circle_size=3, color=(255, 0, 0), figsize=(10,8), 
     :param is_copy: plot on source image or use copy
     """
     plt.figure(figsize=figsize)
-    plt.imshow(set_circles_on_img(img, lmks, circle_size=circle_size, color=color, is_copy=is_copy))
+    edit_img = set_circles_on_img(img, lmks, circle_size=circle_size, color=color, is_copy=is_copy)
+    plt.imshow(edit_img)
+    #plt.imshow(set_circles_on_diff_color_img(img, lmks, circle_size=circle_size, is_copy=is_copy))
+
     plt.show()
+    
+    return edit_img
+    
+def save_landmarks(target_path, img, lmks, circle_size=3, color=(255, 0, 0), figsize=(10,8), is_copy=True):
+    """
+    Plot landmarks on image
+    :param img: source image
+    :param lmks: landmarks to chow
+    :param circle_size: landmarks size
+    :param color: landmarks color
+    :param is_copy: plot on source image or use copy
+    """
+    cv2.imwrite(target_path, set_circles_on_img(img, lmks, circle_size=circle_size, color=color, is_copy=is_copy))
+
 
 
 def alignment_orig(src_img, src_pts, ncols=96, nrows=112, custom_align=None):
@@ -103,11 +187,13 @@ def alignment_orig(src_img, src_pts, ncols=96, nrows=112, custom_align=None):
 
     ref_pts = [ [30.2946, 51.6963],[65.5318, 51.5014],
         [48.0252, 71.7366],[33.5493, 92.3655],[62.7299, 92.2041] ]
-
+    """
     if custom_align is not None:
         row[0] += custom_align[0]
         row[1] += custom_align[1]
-        
+    """
+    if custom_align is not None:
+         ref_pts = custom_align
     elif ncols == 112:
         for row in ref_pts:
             row[0] += 8.0

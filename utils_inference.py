@@ -195,3 +195,31 @@ def transform_preds(coords, center, scale, output_size):
     for p in range(coords.size(0)):
         coords[p, 0:2] = torch.tensor(transform_pixel(coords[p, 0:2], center, scale, output_size, 1, 0))
     return coords
+
+def detect_direction(lmks, img_w):
+    #FL, HL, C, HR, FR 
+    left_lip  = lmks[3][0]
+    right_lip = lmks[4][0]
+    nose   = lmks[2][0]
+
+    center = img_w/2
+    offset = img_w/10
+    half_bound = img_w/ 8 * 5
+    full_bound = img_w/ 8
+    
+    diff_eye = abs(left_lip - right_lip)
+    
+    if nose > center+offset:
+        if diff_eye < full_bound:
+            return 4 #FR
+        elif diff_eye < half_bound:
+            return 3 #HR
+    elif nose < center-offset:
+        if diff_eye < full_bound:
+            return 0 #FL
+        elif diff_eye < half_bound:
+            return 1 #HL
+        
+    return 2 #C
+
+
