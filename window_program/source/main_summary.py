@@ -549,7 +549,8 @@ def save_log(path, output_path, set_list):
             total_cnt += len(target_d[dir_type].keys())     
         total.append(cnt)
 
-    all_dicts = {"path":path,
+    all_dicts = {"total" : total, 
+                "path":path,
                 "landscape":_landscape, 
                 "zoom_in":_zoom_in,
                 "zoom_out":_zoom_out
