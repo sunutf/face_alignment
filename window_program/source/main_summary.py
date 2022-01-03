@@ -60,7 +60,9 @@ def get_lmks_with_dicts(model, input_path, img_paths):
         i +=1
         print(ospj(input_path,img_path))
         img_dict = {}
-        img = cv2.imread(ospj(input_path,img_path))
+        full_path = ospj(input_path,img_path)
+        #img = cv2.imread(ospj(input_path,img_path))
+        img = cv2.imdecode(np.fromfile(full_path, np.uint8), cv2.IMREAD_COLOR)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_dict['img'] = img
         img_dict['width'] = img.shape[1]
@@ -85,7 +87,7 @@ def get_lmks_with_dicts(model, input_path, img_paths):
         imgs_dict[img_path] = img_dict
     return imgs_dict
 
-def sort_imgs_to_set(imgs_dict):
+def sort_imgs_to_set(imgs_dict, state_dict):
     landscape_d = {}
     zoom_in_d ={}
     zoom_out_d = {}
@@ -98,7 +100,7 @@ def sort_imgs_to_set(imgs_dict):
         height = imgs_dict[k]['height']
         lmks = imgs_dict[k]['lmks']
 
-        if width > height:
+        if width > height and state_dict["Ls"]:
             landscape_d[k] = imgs_dict[k]
         else:
             left_eye = lmks[0]
@@ -126,12 +128,19 @@ def sort_imgs_to_set(imgs_dict):
         right_lip = lmks[4]
 
         if width < height:
-            btw_lips = abs(left_lip[0] - right_lip[0])
-            btw_eye2lip = abs((left_lip[1]+right_lip[1])/2 - (left_eye[1]+right_eye[1])/2)
-            if btw_lips > half_w or btw_eye2lip > half_h:
-                zoom_in_d[k] = imgs_dict[k]
+            if state_dict["ZIs"] and state_dict["ZOs"]:
+                btw_lips = abs(left_lip[0] - right_lip[0])
+                btw_eye2lip = abs((left_lip[1]+right_lip[1])/2 - (left_eye[1]+right_eye[1])/2)
+                if btw_lips > half_w or btw_eye2lip > half_h:
+                    zoom_in_d[k] = imgs_dict[k]
+                else:
+                    zoom_out_d[k] = imgs_dict[k]
             else:
-                zoom_out_d[k] = imgs_dict[k]
+                if state_dict["ZIs"]:
+                    zoom_in_d[k] = imgs_dict[k]     
+                elif state_dict["ZOs"]: 
+                    zoom_out_d[k] = imgs_dict[k]
+
     return landscape_d, zoom_in_d, zoom_out_d
 
 def sort_set_to_dirtype(target_d):
@@ -184,9 +193,16 @@ def sort_set_to_dirtype(target_d):
 
 
 def sort_all_sets_to_dirtype(landscape_d, zoom_in_d, zoom_out_d):
-    landscape = sort_set_to_dirtype(landscape_d)
-    zoom_in   = sort_set_to_dirtype(zoom_in_d)
-    zoom_out  = sort_set_to_dirtype(zoom_out_d)
+    landscape = None
+    zoom_in = None
+    zoom_out = None
+
+    if len(landscape_d.keys()) != 0:
+        landscape = sort_set_to_dirtype(landscape_d)
+    if len(zoom_in_d.keys()) != 0:
+        zoom_in = sort_set_to_dirtype(zoom_in_d)
+    if len(zoom_out_d.keys()) != 0:
+        zoom_out  = sort_set_to_dirtype(zoom_out_d)
     return landscape, zoom_in, zoom_out
 
 def set_scale_ref_img(target_dicts):
@@ -519,7 +535,7 @@ def save_images(input_path, output_folder, target_dicts, dir_path="landscape"):
                 with open(ospj(dir_path, str(k)), mode='w+b') as f:
                     encoded_img.tofile(f)
 
-def save_log(path, output_path, set_list):
+def save_log(path, output_path, set_dict):
     import copy
     import json
     
@@ -533,39 +549,43 @@ def save_log(path, output_path, set_list):
 
     path = ospj(path, output_path)
     log_path = ospj(path,file+"_log.json")
-    _landscape = copy.deepcopy(set_list[0])
-    _zoom_in = copy.deepcopy(set_list[1])
-    _zoom_out = copy.deepcopy(set_list[2])
+    _set_dict = {}
+    _set_dict["landscape"] = copy.deepcopy(set_dict["landscape"])
+    _set_dict["zoom_in"] = copy.deepcopy(set_dict["zoom_in"])
+    _set_dict["zoom_out"] = copy.deepcopy(set_dict["zoom_out"])
     
     total = []
     total_cnt = 0
-    for target_d in [_landscape, _zoom_in, _zoom_out]:
-        cnt = {} 
-        for dir_type in ["origin", "horizontal", "vertical"]:
-            for target in target_d[dir_type].keys():
-                del(target_d[dir_type][target]["img"])
-                del(target_d[dir_type][target]["crop_img"])
-            cnt[dir_type] = len(target_d[dir_type].keys())
-            total_cnt += len(target_d[dir_type].keys())     
-        total.append(cnt)
+    for target_d in _set_dict.keys():
+        target_dir = _set_dict[target_d]
+        if target_dir is None:
+            print("{} is None".format(target_d))
+        else:
+            cnt = {} 
+            for dir_type in ["origin", "horizontal", "vertical"]:
+                for target in target_dir[dir_type].keys():
+                    del(target_dir[dir_type][target]["img"])
+                    del(target_dir[dir_type][target]["crop_img"])
+                cnt[dir_type] = len(target_dir[dir_type].keys())
+                total_cnt += len(target_dir[dir_type].keys())
+            print("{} : {} (O : {}, H : {}, V: {})".format(target_d, (cnt["origin"]+cnt["horizontal"]+cnt["vertical"]), cnt["origin"], cnt["horizontal"], cnt["vertical"]))      
+            total.append(cnt)
+    print("total : {}".format(total_cnt))
 
     all_dicts = {"total" : total, 
                 "path":path,
-                "landscape":_landscape, 
-                "zoom_in":_zoom_in,
-                "zoom_out":_zoom_out
+                "landscape":_set_dict["landscape"], 
+                "zoom_in":_set_dict["zoom_in"],
+                "zoom_out":_set_dict["zoom_out"]
                 }
     with open(log_path, 'w') as log_f :
         json.dump(json.dumps(all_dicts, cls=NumpyEncoder), log_f)
 
-    print("total : {}\n".format(total_cnt))
-    print("landscape : {} (O : {}, H : {}, V: {})\n".format((total[0]["origin"]+total[0]["horizontal"]+total[0]["vertical"]), total[0]["origin"], total[0]["horizontal"], total[0]["vertical"]))
-    print("zoom_in : {} (O : {}, H : {}, V: {})\n".format((total[1]["origin"]+total[1]["horizontal"]+total[1]["vertical"]), total[1]["origin"], total[1]["horizontal"], total[1]["vertical"]))
-    print("zoom_out : {} (O : {}, H : {}, V: {})\n".format((total[2]["origin"]+total[2]["horizontal"]+total[2]["vertical"]), total[2]["origin"], total[2]["horizontal"], total[2]["vertical"]))  
+   
 
 
 
-def main_job(input_path):
+def main_job(input_path, checked_photo_type=[]):
     os.environ['KMP_DUPLICATE_LIB_OK']='True'
     input_path = input_path.replace("/", "\\")
     file_list = os.listdir(input_path)
@@ -575,8 +595,11 @@ def main_job(input_path):
     if len(img_paths) == 0:
         print ("No Images!")
         return None
+    
+    landscape_state = True if "landscape" in checked_photo_type else False
+    zoom_in_state = True if "zoom_in" in checked_photo_type else False
+    zoom_out_state = True if "zoom_out" in checked_photo_type else False
 
-    #landscape_split_d/ zoom_in_split_d/ zoom_out_split_d
     model = get_model_by_name('AFLW')
 
     print ("="*10, " Loading Images... ", "="*10)
@@ -584,23 +607,29 @@ def main_job(input_path):
 
     #generate "landscape/ zoom_in/ zoom_out"
     print ("="*10, " Sort Images..... ", "="*10)
-    landscape, zoom_in, zoom_out = sort_imgs_to_set(imgs_dict)
+    landscape, zoom_in, zoom_out = sort_imgs_to_set(imgs_dict, {"Ls":landscape_state, "ZIs":zoom_in_state, "ZOs":zoom_out_state})
 
     #generate "origin/ horizontal/ vertical"
     landscape, zoom_in, zoom_out = sort_all_sets_to_dirtype(landscape, zoom_in, zoom_out) 
 
     print ("="*10, " Edit Images... ", "="*10)
-    edit_all_images(landscape, "nose")
-    edit_all_images(zoom_in, "eye")
-    edit_all_images(zoom_out, "eye")
+    if landscape_state:
+        edit_all_images(landscape, "nose")
+    if zoom_in_state:
+        edit_all_images(zoom_in, "eye")
+    if zoom_out_state:
+        edit_all_images(zoom_out, "eye")
 
     print ("="*10, " Save Images... ", "="*10)
-    save_images(input_path, "output", landscape, dir_path="landscape")
-    save_images(input_path, "output", zoom_in, dir_path="zoom_in")
-    save_images(input_path, "output", zoom_out, dir_path="zoom_out")
+    if landscape_state:
+        save_images(input_path, "output", landscape, dir_path="landscape")
+    if zoom_in_state:
+        save_images(input_path, "output", zoom_in, dir_path="zoom_in")
+    if zoom_out_state:
+        save_images(input_path, "output", zoom_out, dir_path="zoom_out")
 
     print ("="*10, " Save Log file... ", "="*10)
-    save_log(input_path, "output", [landscape, zoom_in, zoom_out])
+    save_log(input_path, "output", {"landscape":landscape, "zoom_in":zoom_in, "zoom_out":zoom_out})
 
     print ("@ Complete! @")
     return True

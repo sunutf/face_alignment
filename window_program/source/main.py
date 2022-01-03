@@ -2,9 +2,10 @@ import os, sys
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QEventLoop
 from PyQt5.QtWidgets import QWidget, QApplication,\
-                            QLabel, QFileDialog, QGroupBox, \
+                            QLabel, QFileDialog, QGroupBox,\
                             QPushButton, QLineEdit, QMessageBox,\
-                            QTextBrowser, QVBoxLayout, QHBoxLayout
+                            QTextBrowser, QVBoxLayout, QHBoxLayout,\
+                            QCheckBox
 
 from stdout import StdoutRedirect
 from main_summary import main_job
@@ -23,6 +24,9 @@ class Window(QWidget):
         self.findInputPathBtn.clicked.connect(self.findInputPathBtn_func)
         self.inputPathEditor.textChanged.connect(self.on_changed_input_path_func)
         self.actionBtn.clicked.connect(self.actionBtn_func)
+
+        self.checkbox_cnt = 0
+        self.checked_photo_type = []
            
     def init_ui(self):
         self.set_window_in_center()
@@ -32,11 +36,6 @@ class Window(QWidget):
 
         groupbox1 = QGroupBox('Image Preparation')
         groupbox2 = QGroupBox('Therapy')
-
-        vbox1 = QVBoxLayout()
-        vbox2 = QVBoxLayout()
-        hbox = QHBoxLayout()
-        layout = QVBoxLayout()
 
         # Text
         self.text1 = QLabel("Image Folder     ", self)
@@ -51,6 +50,15 @@ class Window(QWidget):
         self.inputPathEditor.setFont(QtGui.QFont("Arial", 9))
         self.inputPathEditor.resize(320, 30)
 
+        # Photo Type Check Box
+        self.cb1 = QCheckBox('Landscape', self)
+        self.cb2 = QCheckBox('Zoom In', self)
+        self.cb3 = QCheckBox('Zoom Out', self)
+
+        self.cb1.toggled.connect(self.on_changed_checkbox_func)
+        self.cb2.toggled.connect(self.on_changed_checkbox_func)
+        self.cb3.toggled.connect(self.on_changed_checkbox_func)
+
         # Action Button
         self.actionBtn = QPushButton("Action", self)
         self.actionBtn.setIcon(QtGui.QIcon('sources/action.png'))
@@ -59,10 +67,20 @@ class Window(QWidget):
         # Log Browser
         self.logBrowser = QTextBrowser(self)
 
-        hbox.addWidget(self.text1)
-        hbox.addWidget(self.findInputPathBtn)
-        vbox1.addLayout(hbox)
+        vbox1 = QVBoxLayout()
+        vbox2 = QVBoxLayout()
+        hbox1 = QHBoxLayout()
+        hbox2 = QHBoxLayout()
+        layout = QVBoxLayout()
+
+        hbox1.addWidget(self.text1)
+        hbox1.addWidget(self.findInputPathBtn)
+        hbox2.addWidget(self.cb1)
+        hbox2.addWidget(self.cb2)
+        hbox2.addWidget(self.cb3)
+        vbox1.addLayout(hbox1)
         vbox1.addWidget(self.inputPathEditor)
+        vbox1.addLayout(hbox2)
 
         groupbox1.setLayout(vbox1)
 
@@ -91,11 +109,27 @@ class Window(QWidget):
         self.inputPathEditor.setText(folder_path)
 
     def on_changed_input_path_func(self):
-        path = self.inputPathEditor.text()
-        if not path or path == "":
-            self.set_actionBtn_disabled()
-        else:
+        self.path = self.inputPathEditor.text()
+        self.check_actionBtn_available()
+
+    def on_changed_checkbox_func(self):
+        self.checked_photo_type = []
+
+        if self.cb1.isChecked():
+            self.checked_photo_type.append("landscape")
+        if self.cb2.isChecked():
+            self.checked_photo_type.append("zoom_in")
+        if self.cb3.isChecked():
+            self.checked_photo_type.append("zoom_out")
+
+        self.checkbox_cnt = len(self.checked_photo_type)
+        self.check_actionBtn_available()
+        
+    def check_actionBtn_available(self):
+        if (self.path or self.path != "") and (self.checkbox_cnt > 0):
             self.set_actionBtn_enabled()
+        else:
+            self.set_actionBtn_disabled()
 
     def set_actionBtn_enabled(self):
         self.actionBtn.setEnabled(True)
@@ -107,7 +141,7 @@ class Window(QWidget):
 
     def actionBtn_func(self):
         input_path = self.inputPathEditor.text()
-        result = main_job(input_path=input_path)
+        result = main_job(input_path=input_path, checked_photo_type=self.checked_photo_type)
         
         if result == None:
             QMessageBox.warning(self, "알림", "폴더 내에 이미지가 존재하지 않습니다.\n(jpg, jpeg 확장자 지원)")
